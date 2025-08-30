@@ -1,13 +1,23 @@
-name: CI/CD Pipeline
+name: Restaurant Analytics Portal CI/CD
 
 on:
   push:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
+  release:
+    types: [ published ]
+
+env:
+  RAILS_ENV: test
+  DATABASE_URL: postgresql://postgres:password@localhost:5432/restaurant_analytics_test
+  REDIS_URL: redis://localhost:6379/0
+  RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
 
 jobs:
+  # Test Stage
   test:
+    name: Test Suite
     runs-on: ubuntu-latest
     
     services:
@@ -23,7 +33,7 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-
+      
       redis:
         image: redis:7-alpine
         options: >-
@@ -35,107 +45,255 @@ jobs:
           - 6379:6379
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Ruby
-      uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: '3.1.2'
-        bundler-cache: true
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.1.2'
+          bundler-cache: true
 
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libpq-dev
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
 
-    - name: Install gems
-      run: bundle install
+      - name: Setup database
+        run: |
+          bundle exec rails db:create
+          bundle exec rails db:schema:load
+          bundle exec rails db:seed
 
-    - name: Setup test database
-      env:
-        RAILS_ENV: test
-        DATABASE_HOST: localhost
-        DATABASE_USERNAME: postgres
-        DATABASE_PASSWORD: password
-        DATABASE_PORT: 5432
-      run: |
-        bundle exec rails db:create
-        bundle exec rails db:schema:load
+      - name: Run RuboCop
+        run: bundle exec rubocop
 
-    - name: Run RuboCop
-      run: bundle exec rubocop
+      - name: Run Brakeman security scan
+        run: bundle exec brakeman -q -w2
 
-    - name: Run tests
-      env:
-        RAILS_ENV: test
-        DATABASE_HOST: localhost
-        DATABASE_USERNAME: postgres
-        DATABASE_PASSWORD: password
-        DATABASE_PORT: 5432
-        REDIS_URL: redis://localhost:6379/0
-      run: bundle exec rspec
+      - name: Run RSpec tests
+        run: bundle exec rspec --format progress --format documentation
 
-  build:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+      - name: Run test coverage
+        run: bundle exec rspec --format progress --coverage
 
-    steps:
-    - uses: actions/checkout@v4
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage/.resultset.json
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Build Docker image
-      run: |
-        docker build -t restaurant-analytics-api:${{ github.sha }} .
-        docker build -t restaurant-analytics-api:latest .
-
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Push Docker image
-      run: |
-        docker tag restaurant-analytics-api:${{ github.sha }} ghcr.io/${{ github.repository }}:${{ github.sha }}
-        docker tag restaurant-analytics-api:latest ghcr.io/${{ github.repository }}:latest
-        docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
-        docker push ghcr.io/${{ github.repository }}:latest
-
+  # Security Stage
   security:
+    name: Security Checks
     runs-on: ubuntu-latest
     needs: test
-
+    
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Ruby
-      uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: '3.1.2'
-        bundler-cache: true
+      - name: Run Bundle Audit
+        run: |
+          gem install bundler-audit
+          bundle-audit check --update
 
-    - name: Run Brakeman security check
-      run: bundle exec brakeman --no-progress --json --output brakeman-report.json
+      - name: Run Yarn Audit
+        run: |
+          npm install -g yarn
+          yarn audit --level moderate
 
-    - name: Upload Brakeman results
-      uses: actions/upload-artifact@v4
-      with:
-        name: brakeman-security-report
-        path: brakeman-report.json
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          config-path: .gitleaks.toml
 
-  deploy-preview:
-    needs: [test, build]
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # Build Stage
+  build:
+    name: Build Docker Image
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-
+    needs: [test, security]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
     steps:
-    - name: Deploy preview environment
-      run: |
-        echo "Deploying preview environment for PR #${{ github.event.number }}"
-        # Add deployment logic here
-        # This could include deploying to a staging environment
-        # or creating a preview URL for the PR
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_USERNAME }}/restaurant-analytics-portal
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Deploy Preview Stage
+  deploy-preview:
+    name: Deploy Preview
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    if: github.event_name == 'pull_request'
+    environment: preview
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup ngrok
+        uses: ngrok/setup-ngrok@v2
+        with:
+          authtoken: ${{ secrets.NGROK_AUTH_TOKEN }}
+
+      - name: Deploy to preview environment
+        run: |
+          echo "Deploying preview for PR #${{ github.event.number }}"
+          # This would contain your actual deployment logic
+          # For now, just echo the deployment info
+          echo "Preview URL: https://${{ github.event.number }}-preview.ngrok.io"
+
+  # Production Deploy Stage
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [test, security, build]
+    if: github.event_name == 'release' && github.event.action == 'published'
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: |
+          echo "Deploying to production for release ${{ github.event.release.tag_name }}"
+          # This would contain your actual production deployment logic
+          # For now, just echo the deployment info
+          echo "Production deployment initiated"
+
+  # Performance Testing Stage
+  performance:
+    name: Performance Testing
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.1.2'
+          bundler-cache: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Setup test database
+        run: |
+          bundle exec rails db:create
+          bundle exec rails db:schema:load
+
+      - name: Run performance tests
+        run: |
+          bundle exec rspec spec/performance/ --format progress
+
+      - name: Generate performance report
+        run: |
+          bundle exec rails runner "PerformanceMonitor.instance.export_metrics(1.hour, :json)"
+
+  # Documentation Stage
+  documentation:
+    name: Generate Documentation
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.1.2'
+          bundler-cache: true
+
+      - name: Generate API documentation
+        run: |
+          bundle exec rails runner "ApiDocGenerator.generate_all"
+
+      - name: Upload documentation artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: api-documentation
+          path: docs/
+          retention-days: 30
+
+  # Notifications Stage
+  notify:
+    name: Send Notifications
+    runs-on: ubuntu-latest
+    needs: [test, security, build, deploy-production]
+    if: always()
+    
+    steps:
+      - name: Notify Slack on success
+        if: success()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: '✅ Restaurant Analytics Portal CI/CD pipeline completed successfully!'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          text: '❌ Restaurant Analytics Portal CI/CD pipeline failed!'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

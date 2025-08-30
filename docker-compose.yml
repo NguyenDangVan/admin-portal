@@ -2,23 +2,29 @@ version: '3.8'
 
 services:
   db:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: restaurant_analytics_db
     environment:
       POSTGRES_DB: restaurant_analytics_development
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - restaurant_network
 
   redis:
     image: redis:7-alpine
+    container_name: restaurant_analytics_redis
     ports:
       - "6379:6379"
     volumes:
@@ -28,18 +34,25 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - restaurant_network
 
   api:
     build: .
+    container_name: restaurant_analytics_api
+    environment:
+      - RAILS_ENV=development
+      - DATABASE_URL=postgresql://postgres:password@db:5432/restaurant_analytics_development
+      - REDIS_URL=redis://redis:6379/0
+      - RAILS_SERVE_STATIC_FILES=true
+      - RAILS_LOG_TO_STDOUT=true
+      - SECRET_KEY_BASE=${SECRET_KEY_BASE}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
     ports:
       - "3000:3000"
-    environment:
-      RAILS_ENV: development
-      DATABASE_HOST: db
-      DATABASE_USERNAME: postgres
-      DATABASE_PASSWORD: password
-      DATABASE_PORT: 5432
-      REDIS_URL: redis://redis:6379/0
     volumes:
       - .:/app
       - bundle_cache:/usr/local/bundle
@@ -48,17 +61,27 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: ./bin/rails server -b 0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - restaurant_network
+    command: ["bundle", "exec", "rails", "server", "-b", "0.0.0.0"]
 
   sidekiq:
     build: .
+    container_name: restaurant_analytics_sidekiq
     environment:
-      RAILS_ENV: development
-      DATABASE_HOST: db
-      DATABASE_USERNAME: postgres
-      DATABASE_PASSWORD: password
-      DATABASE_PORT: 5432
-      REDIS_URL: redis://redis:6379/0
+      - RAILS_ENV=development
+      - DATABASE_URL=postgresql://postgres:password@db:5432/restaurant_analytics_development
+      - REDIS_URL=redis://redis:6379/0
+      - RAILS_LOG_TO_STDOUT=true
+      - SECRET_KEY_BASE=${SECRET_KEY_BASE}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+    ports:
+      - "3001:3001"
     volumes:
       - .:/app
       - bundle_cache:/usr/local/bundle
@@ -67,9 +90,55 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: bundle exec sidekiq
+    networks:
+      - restaurant_network
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml", "-p", "3001"]
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: restaurant_analytics_ngrok
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTH_TOKEN}
+      - NGROK_SUBDOMAIN=${NGROK_SUBDOMAIN}
+    ports:
+      - "4040:4040"
+    volumes:
+      - ./ngrok.yml:/etc/ngrok.yml
+    depends_on:
+      - api
+      - sidekiq
+    networks:
+      - restaurant_network
+    command: ["ngrok", "start", "--config", "/etc/ngrok.yml", "api", "sidekiq"]
+
+  # Development tools
+  adminer:
+    image: adminer:latest
+    container_name: restaurant_analytics_adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    networks:
+      - restaurant_network
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: restaurant_analytics_redis_commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - restaurant_network
 
 volumes:
   postgres_data:
   redis_data:
   bundle_cache:
+
+networks:
+  restaurant_network:
+    driver: bridge

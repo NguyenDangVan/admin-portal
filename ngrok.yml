@@ -1,0 +1,15 @@
+version: "2"
+authtoken: ${NGROK_AUTH_TOKEN}
+tunnels:
+  api:
+    addr: 3000
+    proto: http
+    subdomain: ${NGROK_SUBDOMAIN}
+    inspect: false
+    bind_tls: true
+  sidekiq:
+    addr: 3001
+    proto: http
+    subdomain: ${NGROK_SUBDOMAIN}-sidekiq
+    inspect: false
+    bind_tls: true
