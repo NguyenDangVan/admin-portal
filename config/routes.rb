@@ -49,6 +49,32 @@ Rails.application.routes.draw do
         post :logout
         get :me
       end
+
+      # GDPR Compliance endpoints
+      namespace :gdpr do
+        get :export_data
+        post :anonymize_data
+        delete :delete_data
+        get :check_consent
+        post :record_consent
+        delete :withdraw_consent
+        get :retention_info
+        get :processing_activities
+        get :subject_rights
+        get :security_measures
+        get :breach_procedures
+        get :compliance_report
+        patch :request_rectification
+        post :object_to_processing
+      end
+
+      # Performance monitoring endpoints
+      namespace :monitoring do
+        get :performance_report
+        get :cache_stats
+        get :system_health
+        get :export_metrics
+      end
     end
   end
 
