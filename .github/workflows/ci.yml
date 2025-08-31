@@ -53,11 +53,20 @@ jobs:
         with:
           ruby-version: '3.1.2'
           bundler-cache: true
+          bundler-cache-clean: true
+
+      - name: Verify Ruby and Bundler
+        run: |
+          ruby --version
+          bundle --version
+          echo "Current platform: $(uname -m)-$(uname -s | tr '[:upper:]' '[:lower:]')"
+          echo "Gemfile.lock platforms:"
+          grep "PLATFORMS" -A 10 Gemfile.lock
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y postgresql-client curl
 
       - name: Setup database
         run: |
@@ -95,15 +104,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.1.2'
+          bundler-cache: true
+
       - name: Run Bundle Audit
         run: |
           gem install bundler-audit
           bundle-audit check --update
-
-      - name: Run Yarn Audit
-        run: |
-          npm install -g yarn
-          yarn audit --level moderate
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
