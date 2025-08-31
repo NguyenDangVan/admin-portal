@@ -1,0 +1,170 @@
+# Gitleaks configuration for Restaurant Analytics Portal
+# Detects secrets, API keys, and sensitive information
+
+[allowlist]
+description = "Allowlist for known false positives"
+paths = [
+    '''\.md$''',
+    '''\.txt$''',
+    '''\.example$''',
+    '''env\.example$''',
+    '''plan\.md$''',
+    '''roadmap\.md$'''
+]
+
+commits = [
+    "allowlisted commit"
+]
+
+[detectors]
+# Enable all detectors
+use-git = true
+use-files = true
+use-env = true
+
+# Custom rules for restaurant-specific patterns
+[[rules]]
+id = "restaurant-api-key"
+description = "Restaurant API key pattern"
+regex = '''restaurant[_-]?api[_-]?key['"]?\s*[:=]\s*['"]?[a-zA-Z0-9]{32,}['"]?'''
+tags = ["key", "restaurant"]
+
+[[rules]]
+id = "supabase-url"
+description = "Supabase URL pattern"
+regex = '''https://[a-zA-Z0-9-]+\.supabase\.co'''
+tags = ["url", "supabase"]
+
+[[rules]]
+id = "jwt-secret"
+description = "JWT secret pattern"
+regex = '''jwt[_-]?secret['"]?\s*[:=]\s*['"]?[a-zA-Z0-9]{32,}['"]?'''
+tags = ["key", "jwt"]
+
+[[rules]]
+id = "database-url"
+description = "Database connection URL pattern"
+regex = '''postgresql://[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+@[a-zA-Z0-9.-]+:[0-9]+/[a-zA-Z0-9_-]+'''
+tags = ["url", "database"]
+
+[[rules]]
+id = "redis-url"
+description = "Redis connection URL pattern"
+regex = '''redis://[a-zA-Z0-9.-]+:[0-9]+/[0-9]+'''
+tags = ["url", "redis"]
+
+[[rules]]
+id = "ngrok-token"
+description = "Ngrok authentication token pattern"
+regex = '''ngrok[_-]?auth[_-]?token['"]?\s*[:=]\s*['"]?[a-zA-Z0-9]{20,}['"]?'''
+tags = ["key", "ngrok"]
+
+[[rules]]
+id = "docker-credentials"
+description = "Docker registry credentials pattern"
+regex = '''docker[_-]?(username|password)['"]?\s*[:=]\s*['"]?[a-zA-Z0-9_-]+['"]?'''
+tags = ["key", "docker"]
+
+[[rules]]
+id = "slack-webhook"
+description = "Slack webhook URL pattern"
+regex = '''https://hooks\.slack\.com/services/[a-zA-Z0-9/]+'''
+tags = ["url", "slack"]
+
+[[rules]]
+id = "github-token"
+description = "GitHub personal access token pattern"
+regex = '''ghp_[a-zA-Z0-9]{36}'''
+tags = ["key", "github"]
+
+[[rules]]
+id = "aws-access-key"
+description = "AWS access key ID pattern"
+regex = '''AKIA[0-9A-Z]{16}'''
+tags = ["key", "aws"]
+
+[[rules]]
+id = "aws-secret-key"
+description = "AWS secret access key pattern"
+regex = '''[0-9a-zA-Z/+]{40}'''
+tags = ["key", "aws"]
+
+[[rules]]
+id = "stripe-key"
+description = "Stripe API key pattern"
+regex = '''sk_live_[0-9a-zA-Z]{24}'''
+tags = ["key", "stripe"]
+
+[[rules]]
+id = "stripe-publishable"
+description = "Stripe publishable key pattern"
+regex = '''pk_live_[0-9a-zA-Z]{24}'''
+tags = ["key", "stripe"]
+
+[[rules]]
+id = "google-api-key"
+description = "Google API key pattern"
+regex = '''AIza[0-9A-Za-z\\-_]{35}'''
+tags = ["key", "google"]
+
+[[rules]]
+id = "firebase-key"
+description = "Firebase API key pattern"
+regex = '''AIza[0-9A-Za-z\\-_]{35}'''
+tags = ["key", "firebase"]
+
+[[rules]]
+id = "sendgrid-key"
+description = "SendGrid API key pattern"
+regex = '''SG\.[a-zA-Z0-9]{22}\.[a-zA-Z0-9]{43}'''
+tags = ["key", "sendgrid"]
+
+[[rules]]
+id = "twilio-key"
+description = "Twilio API key pattern"
+regex = '''SK[0-9a-fA-F]{32}'''
+tags = ["key", "twilio"]
+
+[[rules]]
+id = "mailgun-key"
+description = "Mailgun API key pattern"
+regex = '''key-[0-9a-f]{32}'''
+tags = ["key", "mailgun"]
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic API key pattern"
+regex = '''api[_-]?key['"]?\s*[:=]\s*['"]?[a-zA-Z0-9]{16,}['"]?'''
+tags = ["key", "generic"]
+
+[[rules]]
+id = "generic-secret"
+description = "Generic secret pattern"
+regex = '''secret['"]?\s*[:=]\s*['"]?[a-zA-Z0-9]{16,}['"]?'''
+tags = ["key", "generic"]
+
+[[rules]]
+id = "generic-password"
+description = "Generic password pattern"
+regex = '''password['"]?\s*[:=]\s*['"]?[a-zA-Z0-9!@#$%^&*()_+-=]{8,}['"]?'''
+tags = ["key", "generic"]
+
+[[rules]]
+id = "generic-token"
+description = "Generic token pattern"
+regex = '''token['"]?\s*[:=]\s*['"]?[a-zA-Z0-9]{16,}['"]?'''
+tags = ["key", "generic"]
+
+# Exclude common test and example files
+[[rules]]
+id = "exclude-test-files"
+description = "Exclude test and example files"
+regex = '''(test|spec|example|sample|demo|mock|fixture)'''
+tags = ["exclude"]
+
+# Exclude documentation files
+[[rules]]
+id = "exclude-docs"
+description = "Exclude documentation files"
+regex = '''(README|CHANGELOG|LICENSE|CONTRIBUTING|docs?/)'''
+tags = ["exclude"]

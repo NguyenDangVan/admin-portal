@@ -1,0 +1,52 @@
+:concurrency: <%= ENV.fetch("SIDEKIQ_CONCURRENCY", 5) %>
+:queues:
+  - [critical, 3]
+  - [default, 2]
+  - [low, 1]
+  - [mailers, 1]
+
+:max_retries: 3
+:retry_interval: 10
+
+:logfile: log/sidekiq.log
+:loglevel: info
+
+:pidfile: tmp/pids/sidekiq.pid
+
+:environment: <%= ENV.fetch("RAILS_ENV", "development") %>
+
+# Redis configuration
+:redis:
+  :url: <%= ENV.fetch("REDIS_URL", "redis://localhost:6379/0") %>
+  :namespace: restaurant_analytics
+  :pool_timeout: 5
+  :pool_size: <%= ENV.fetch("SIDEKIQ_REDIS_POOL_SIZE", 10) %>
+
+# Monitoring
+:metrics: true
+:stats: true
+
+# Web UI configuration
+:web:
+  :port: 3001
+  :bind: 0.0.0.0
+  :require: ./config/environment
+
+# Scheduled jobs
+:scheduler:
+  :schedule_file: config/schedule.yml
+
+# Error handling
+:error_handlers:
+  - ->(ex, context) { Rails.logger.error "Sidekiq error: #{ex.message}" }
+  - ->(ex, context) { Sentry.capture_exception(ex) if defined?(Sentry) }
+
+# Job monitoring
+:job_logger: true
+:job_logger_options:
+  :log_arguments: true
+  :log_result: true
+
+# Health checks
+:health_checks:
+  - -> { Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/0")).ping == "PONG" }
