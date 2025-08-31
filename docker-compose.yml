@@ -38,7 +38,9 @@ services:
       - restaurant_network
 
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: restaurant_analytics_api
     environment:
       - RAILS_ENV=development
@@ -71,7 +73,9 @@ services:
     command: ["bundle", "exec", "rails", "server", "-b", "0.0.0.0"]
 
   sidekiq:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: restaurant_analytics_sidekiq
     environment:
       - RAILS_ENV=development

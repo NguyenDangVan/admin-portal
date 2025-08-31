@@ -61,7 +61,9 @@ services:
           cpus: '0.25'
 
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: restaurant_analytics_api_prod
     environment:
       - RAILS_ENV=production
@@ -109,7 +111,9 @@ services:
     command: ["bundle", "exec", "rails", "server", "-b", "0.0.0.0", "-e", "production"]
 
   sidekiq:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: restaurant_analytics_sidekiq_prod
     environment:
       - RAILS_ENV=production
@@ -182,7 +186,9 @@ services:
 
   # Production backup service
   backup:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: restaurant_analytics_backup
     environment:
       - RAILS_ENV=production
